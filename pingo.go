@@ -34,27 +34,34 @@ const (
 
 	IPSWIDTH = 22
 	HWIDTH   = 46
-	HHEIGHT  = 27
+	HHEIGHT  = 35
 )
 
 const helpDetails = `
-
+-------------+------------------------------
+    CTRL + A | add multiple ip addresses
 -------------+------------------------------
     CTRL + D | delete focused ip address
 -------------+------------------------------
     CTRL + E | edit focused ip's configs
 -------------+------------------------------
-    CTRL + A | add & save new ip address
+    CTRL + F | search an ip and focus on
 -------------+------------------------------
-    CTRL + Q | close help or stop ping 
+    CTRL + L | load & add ip from files
+-------------+------------------------------
+    CTRL + Q | close help or stop action 
 -------------+------------------------------
     CTRL + P | start pinging focused ip
 -------------+------------------------------
     CTRL + R | clear outputs view content
 -------------+------------------------------
-    CTRL + F | search an ip and focus on
+    CTRL + T | traceroute the focused ip
 -------------+------------------------------
     F1 & Esc | display or close help view
+-------------+------------------------------
+    <Enter>  | start pinging focused ip
+-------------+------------------------------
+    P or T   | Ping or Trace focused ip
 -------------+------------------------------
     Tab Key  | move focus between views
 -------------+------------------------------
@@ -63,7 +70,7 @@ const helpDetails = `
     CTRL + C | close the full program
 -------------+------------------------------
 
-::::::: Craft with ♥ by Jerome Amon ::::::
+::::::: Crafted with ♥ by Jerome Amon ::::::
 `
 
 type config struct {
@@ -87,17 +94,24 @@ type stat struct {
 var (
 	// global datastore.
 	dbs *databases
+
 	// cursor Y line.
 	focusedIPChan = make(chan string, 10)
-	// triggered IP.
-	ipToPingChan = make(chan string, 1)
-	// ping output.
+
+	// IP to ping and to trace.
+	ipToPingChan  = make(chan string, 1)
+	ipToTraceChan = make(chan string, 1)
+
+	// ping and traceroute output entries.
 	outputsDataChan = make(chan string, 10)
+
 	// cleanup outputs view.
 	clearOutputsViewChan = make(chan struct{})
+
 	// custom title of output view.
 	outputsTitleChan = make(chan string, 1)
-	// control goroutines.
+
+	// control all goroutines.
 	exit = make(chan struct{})
 	wg   sync.WaitGroup
 
@@ -442,7 +456,7 @@ func main() {
 	g.Update(updateIPsView)
 
 	wg.Add(1)
-	go schedulePing()
+	go scheduler()
 
 	wg.Add(1)
 	go updateConfigView(g, configView)
@@ -534,7 +548,7 @@ func updateOutputsView(g *gocui.Gui, outputsView *gocui.View) {
 			return
 		}
 		// pause the infinite loop to avoid cpu spike.
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(10 * time.Millisecond)
 	}
 }
 
@@ -620,8 +634,25 @@ func keybindings(g *gocui.Gui) error {
 		return err
 	}
 
-	// Enter key to add current focused IP to Ping scheduler.
+	// Press <Enter> key or <P> or <Ctrl+P> to add current focused IP to Ping scheduler.
 	if err := g.SetKeybinding(IPLIST, gocui.KeyEnter, gocui.ModNone, addPing); err != nil {
+		return err
+	}
+
+	if err := g.SetKeybinding(IPLIST, gocui.KeyCtrlP, gocui.ModNone, addPing); err != nil {
+		return err
+	}
+
+	if err := g.SetKeybinding(IPLIST, 'P', gocui.ModNone, addPing); err != nil {
+		return err
+	}
+
+	// Press <T> key or <Ctrl+T> to add current focused IP to Traceroute scheduler.
+	if err := g.SetKeybinding(IPLIST, 'T', gocui.ModNone, addTraceroute); err != nil {
+		return err
+	}
+
+	if err := g.SetKeybinding(IPLIST, gocui.KeyCtrlT, gocui.ModNone, addTraceroute); err != nil {
 		return err
 	}
 
@@ -1100,9 +1131,9 @@ func outMoveCursorUp(g *gocui.Gui, v *gocui.View) error {
 	return nil
 }
 
-// addPing is triggered when Enter key is pressed inside
-// IPLIST view. It extracts the exact IP address and add
-// it to the channel for ping scheduler.
+// addPing is triggered when Enter or CTRL+P or <P> key is pressed
+// inside IPLIST view. It extracts the exact IP address and add it
+// to the channel <ipToPingChan> for ping scheduler.
 func addPing(g *gocui.Gui, ipv *gocui.View) error {
 	_, cy := ipv.Cursor()
 	l, err := ipv.Line(cy)
@@ -1119,8 +1150,28 @@ func addPing(g *gocui.Gui, ipv *gocui.View) error {
 	return nil
 }
 
-// schedulePing watches the ping jobs channel and spin up a separate ping executor.
-func schedulePing() {
+// addTraceroute is triggered when CTRL+T or <T> key is pressed inside
+// IPLIST view. It extracts the exact IP address and add it to the
+// channel <ipToTraceChan> for traceroute scheduler.
+func addTraceroute(g *gocui.Gui, ipv *gocui.View) error {
+	_, cy := ipv.Cursor()
+	l, err := ipv.Line(cy)
+	if err != nil {
+		log.Println("Failed to read current focused ip value:", err)
+		return nil
+	}
+	if len(l) == 0 {
+		return nil
+	}
+	ip := strings.Fields(strings.TrimSpace(l))[1]
+	outputsTitleChan <- fmt.Sprintf(" Traceroute [%s] Outputs ", ip)
+	ipToTraceChan <- ip
+	return nil
+}
+
+// scheduler watches the ping and traceroute jobs channels and spin up
+// a separate ping or traceroute executor.
+func scheduler() {
 	defer wg.Done()
 	ctx, cancel := context.WithCancel(context.Background())
 	for {
@@ -1130,6 +1181,11 @@ func schedulePing() {
 			clearOutputsViewChan <- struct{}{}
 			ctx, cancel = context.WithCancel(context.Background())
 			go executePing(ip, ctx)
+		case ip := <-ipToTraceChan:
+			cancel()
+			clearOutputsViewChan <- struct{}{}
+			ctx, cancel = context.WithCancel(context.Background())
+			go executeTraceroute(ip, ctx)
 		case <-exit:
 			cancel()
 			return
@@ -1186,19 +1242,15 @@ func buildPingCommand(ip string, ctx context.Context) *exec.Cmd {
 // executePing runs the full ping command.
 func executePing(ip string, ctx context.Context) {
 
-	var cmd *exec.Cmd
-	cmd = buildPingCommand(ip, ctx)
-
-	// combine standard process pipes, stdout & stderr.
+	cmd := buildPingCommand(ip, ctx)
+	// combined outputs.
 	cmd.Stderr = cmd.Stdout
-
 	outpipe, err := cmd.StdoutPipe()
 	if err != nil {
 		log.Println("Failed to get ping process pipe:", err)
 		return
 	}
-
-	// asynchronously starting the job.
+	// async start.
 	err = cmd.Start()
 	if err != nil {
 		log.Println("Failed to start ping:", err)
@@ -1226,12 +1278,69 @@ func executePing(ip string, ctx context.Context) {
 	}()
 
 	select {
-
 	case <-ctx.Done():
 		break
-
 	case <-done:
 		break
+	}
+
+	return
+}
+
+// buildTracerouteCommand constructs full command to run.
+func buildTracerouteCommand(ip string, ctx context.Context) *exec.Cmd {
+	var cmd *exec.Cmd
+	if runtime.GOOS == "windows" {
+		cmd = exec.CommandContext(ctx, "cmd", "/C", fmt.Sprintf("tracert %s", ip))
+	} else {
+		cmd = exec.CommandContext(ctx, LinuxShell, "-c", fmt.Sprintf("traceroute %s", ip))
+	}
+
+	return cmd
+}
+
+// executeTraceroute runs the traceroute command.
+func executeTraceroute(ip string, ctx context.Context) {
+
+	cmd := buildTracerouteCommand(ip, ctx)
+	cmd.Stderr = cmd.Stdout
+	outpipe, err := cmd.StdoutPipe()
+	if err != nil {
+		log.Println("Failed to get traceroute process pipe:", err)
+		return
+	}
+	// async start.
+	err = cmd.Start()
+	if err != nil {
+		log.Println("Failed to start traceroute:", err)
+		return
+	}
+
+	done := make(chan error)
+	go func() {
+		done <- cmd.Wait()
+	}()
+
+	// read each line from the pipe content including
+	// the newline char and stream it to data channel.
+	go func() {
+		var data string
+		var err error
+		reader := bufio.NewReader(outpipe)
+		for {
+			data, err = reader.ReadString('\n')
+			if err != nil {
+				return
+			}
+			outputsDataChan <- strings.TrimSpace(data)
+		}
+	}()
+
+	select {
+	case <-ctx.Done():
+		return
+	case <-done:
+		return
 	}
 
 	return
