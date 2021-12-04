@@ -24,10 +24,10 @@ The same is acheived for Traceroute / Tracert feature. Use <CTRL+T> or <T> to sp
 * use keyboard (CTRL+C) to close immediately the whole program.
 
 * use keyboard F1 & Esc to display Help and close it respectively.
-* use <Enter> to initiate a Ping on the focused IP address.
-* use <P> to initiate a Ping toward the focused IP address.
-* use <T> to initiate a Traceroute toward the focused IP address.
-* use <Tab> to move focus between different views/sessions.
+* Press Enter key to initiate a Ping on the focused IP address.
+* Press P key to initiate a Ping toward the focused IP address.
+* Press T key to initiate a Traceroute toward the focused IP address.
+* use Tab key to move focus between different views/sessions.
 * use ↕ and ↔ to navigate into the list of IP or line of outputs.
 
 * view in real-time the statistics of the ongoing Ping process.
