@@ -107,6 +107,8 @@ var (
 
 	// cleanup outputs view.
 	clearOutputsViewChan = make(chan struct{})
+	// stop ongoing processing (ping or trace).
+	stopProcessingChan = make(chan struct{})
 
 	// custom title of output view.
 	outputsTitleChan = make(chan string, 1)
@@ -327,7 +329,7 @@ func main() {
 
 	// on windows only change terminal title.
 	if runtime.GOOS == "windows" {
-		exec.Command("cmd", "/c", "title [ PingGo By Jerome Amon ]").Run()
+		exec.Command("cmd", "/c", "title [ PinGo By Jerome Amon ]").Run()
 	}
 
 	f, err := os.OpenFile("logs.log", os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
@@ -673,6 +675,29 @@ func keybindings(g *gocui.Gui) error {
 		return err
 	}
 
+	// stop current ongoing action (if any) - which could be Ping or Traceroute.
+	if err := g.SetKeybinding(IPLIST, gocui.KeyCtrlQ, gocui.ModNone, stopCurrentProcessing); err != nil {
+		return err
+	}
+
+	if err := g.SetKeybinding(OUTPUTS, gocui.KeyCtrlQ, gocui.ModNone, stopCurrentProcessing); err != nil {
+		return err
+	}
+
+	if err := g.SetKeybinding(CONFIG, gocui.KeyCtrlQ, gocui.ModNone, stopCurrentProcessing); err != nil {
+		return err
+	}
+
+	if err := g.SetKeybinding(STATS, gocui.KeyCtrlQ, gocui.ModNone, stopCurrentProcessing); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// stopCurrentProcessing triggered on CTRL+Q send stop flag to channel.
+func stopCurrentProcessing(g *gocui.Gui, v *gocui.View) error {
+	stopProcessingChan <- struct{}{}
 	return nil
 }
 
@@ -1170,7 +1195,8 @@ func addTraceroute(g *gocui.Gui, ipv *gocui.View) error {
 }
 
 // scheduler watches the ping and traceroute jobs channels and spin up
-// a separate ping or traceroute executor.
+// a separate ping or traceroute executor. It can clear the outputs view
+// or just cancel any ongoing processing.
 func scheduler() {
 	defer wg.Done()
 	ctx, cancel := context.WithCancel(context.Background())
@@ -1186,6 +1212,8 @@ func scheduler() {
 			clearOutputsViewChan <- struct{}{}
 			ctx, cancel = context.WithCancel(context.Background())
 			go executeTraceroute(ip, ctx)
+		case <-stopProcessingChan:
+			cancel()
 		case <-exit:
 			cancel()
 			return
