@@ -17,6 +17,7 @@ import (
 	"os/exec"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -27,8 +28,8 @@ import (
 const (
 	IPLIST  = "ips"
 	STATS   = "stats"
-	CONFIG  = "config"
 	INFOS   = "infos"
+	CONFIG  = "config"
 	OUTPUTS = "outputs"
 	HELP    = "help"
 
@@ -75,7 +76,7 @@ const helpDetails = `
 
 type config struct {
 	start     string
-	count     int
+	requests  int
 	threshold int
 	timeout   int
 	backup    bool
@@ -85,8 +86,8 @@ type stat struct {
 	min   int
 	avg   int
 	max   int
-	total int
 	fails int
+	match int
 	above int
 	under int
 }
@@ -104,6 +105,10 @@ var (
 
 	// ping and traceroute output entries.
 	outputsDataChan = make(chan string, 10)
+
+	// ping output entries for statistics.
+	outputsStatsChan   = make(chan string, 10)
+	clearStatsViewChan = make(chan struct{})
 
 	// cleanup outputs view.
 	clearOutputsViewChan = make(chan struct{})
@@ -263,15 +268,15 @@ func isValidIP(ip string) bool {
 // formatIPConfig formats a given IP configuration.
 func (db *databases) formatIPConfig(ip string) string {
 	cfg := db.getConfig(ip)
-	return fmt.Sprintf("started: %s\ncount: %d\nthreshold: %d\ntimeout: %d\nbackup: %v\n",
-		cfg.start, cfg.count, cfg.threshold, cfg.timeout, cfg.backup)
+	return fmt.Sprintf("backup   : %v\ntimeout  : %d\nstarted  : %s\nrequests : %d\nthreshold: %d",
+		cfg.backup, cfg.timeout, cfg.start, cfg.requests, cfg.threshold)
 }
 
 // formatIPStats formats a given IP statistics.
 func (db *databases) formatIPStats(ip string) string {
 	s := db.getStats(ip)
-	return fmt.Sprintf("min : %d\navg: %d\nmax: %d\ntotal: %d\nfails: %v\nabove: %v\nunder: %v\n",
-		s.min, s.avg, s.max, s.total, s.fails, s.above, s.under)
+	return fmt.Sprintf("min  : %d\navg  : %d\nmax  : %d\nfails: %d\nmatch: %d\nabove: %d\nunder: %d\n",
+		s.min, s.avg, s.max, s.fails, s.match, s.above, s.under)
 }
 
 // loadInfos loads data piped and from all files passed as
@@ -415,7 +420,7 @@ func main() {
 	configView.Highlight = false
 
 	// Current Ping Statistics view.
-	statsView, err := g.SetView(STATS, 0, maxY-10, IPSWIDTH, maxY-4)
+	statsView, err := g.SetView(STATS, 0, maxY-10, IPSWIDTH, maxY-2)
 	if err != nil && err != gocui.ErrUnknownView {
 		log.Println("Failed to create stats view:", err)
 		return
@@ -428,17 +433,16 @@ func main() {
 	statsView.Editable = false
 
 	// Infos view.
-	infosView, err := g.SetView(INFOS, 0, maxY-3, IPSWIDTH, maxY-1)
+	infosView, err := g.SetView(INFOS, 0, maxY-2, IPSWIDTH, maxY)
 	if err != nil && err != gocui.ErrUnknownView {
-		log.Println("Failed to create help view:", err)
+		log.Println("Failed to create infos view:", err)
 		return
 	}
 	infosView.FgColor = gocui.ColorRed
-	infosView.SelBgColor = gocui.ColorBlack
-	infosView.SelFgColor = gocui.ColorYellow
+	infosView.Highlight = false
 	infosView.Editable = false
-	infosView.Wrap = false
-	fmt.Fprint(infosView, " Press F1 For Help")
+	infosView.Frame = false
+	fmt.Fprint(infosView, " Press F1 For Help ")
 
 	// Apply keybindings to ui.
 	if err = keybindings(g); err != nil {
@@ -463,12 +467,11 @@ func main() {
 	wg.Add(1)
 	go updateConfigView(g, configView)
 
-	// TODO
-	// wg.Add(1)
-	// go updateStatsView(g, statsView)
-
 	wg.Add(1)
 	go updateOutputsView(g, outputsView)
+
+	wg.Add(1)
+	go updateStatsView(g, statsView)
 
 	if err := g.MainLoop(); err != nil && err != gocui.ErrQuit {
 		close(exit)
@@ -500,20 +503,15 @@ func updateIPsView(g *gocui.Gui) error {
 // updateConfigView displays focused IP configs.
 func updateConfigView(g *gocui.Gui, configView *gocui.View) {
 	defer wg.Done()
-	var cfg string
-
+	var ip string
 	for {
-
 		select {
-
 		case <-exit:
 			return
-
-		case cfg = <-focusedIPChan:
-
+		case ip = <-focusedIPChan:
 			g.Update(func(g *gocui.Gui) error {
 				configView.Clear()
-				fmt.Fprint(configView, dbs.formatIPConfig(cfg))
+				fmt.Fprint(configView, dbs.formatIPConfig(ip))
 				return nil
 			})
 		}
@@ -554,6 +552,87 @@ func updateOutputsView(g *gocui.Gui, outputsView *gocui.View) {
 	}
 }
 
+// updateStatsView displays ongoing Ping statistics.
+func updateStatsView(g *gocui.Gui, statsView *gocui.View) {
+	defer wg.Done()
+	var data string
+	//var latestStats stats
+	for {
+		select {
+		case data = <-outputsStatsChan:
+			g.Update(func(g *gocui.Gui) error {
+				if ip, ok := buildStats(data); ok {
+					statsView.Clear()
+					fmt.Fprint(statsView, dbs.formatIPStats(ip))
+				}
+				return nil
+			})
+		case <-clearStatsViewChan:
+			//latestStats = &stats{}
+			g.Update(func(g *gocui.Gui) error {
+				statsView.Clear()
+				return nil
+			})
+		case <-exit:
+			return
+		}
+
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// buildStats updates the Ping statistics from a given response data.
+// rt == -1 means the output is not a successful reply.
+// true means the output states for a ping failure.
+// false means to ignore the output (statistics data).
+func buildStats(data string) (string, bool) {
+	ip, threshold, output := strings.Split(data, "@")[0], strings.Split(data, "@")[1], strings.Split(data, "@")[2]
+	stats := dbs.getStats(ip)
+	rt, failed := getResponseTime(output)
+	if rt == -1 && !failed {
+		// ignore output.
+		return ip, false
+	}
+	if rt == -1 && failed {
+		// failure response.
+		stats.fails += 1
+		return ip, true
+	}
+
+	// reply response.
+
+	modif := false
+	if stats.min == 0 && stats.max == 0 {
+		// matches the first output data.
+		stats.min, stats.max = rt, rt
+		modif = true
+	} else {
+		// this for following outputs.
+		if rt < stats.min {
+			stats.min = rt
+			modif = true
+		} else if stats.max < rt {
+			stats.max = rt
+			modif = true
+		}
+	}
+	// compute average only if there was a change.
+	if modif {
+		stats.avg = (stats.min + stats.max) / 2
+	}
+
+	thres, _ := strconv.Atoi(threshold)
+	if rt == thres {
+		stats.match += 1
+	} else if rt > thres {
+		stats.above += 1
+	} else if rt < thres {
+		stats.under += 1
+	}
+
+	return ip, true
+}
+
 func layout(g *gocui.Gui) error {
 	maxX, maxY := g.Size()
 
@@ -579,14 +658,14 @@ func layout(g *gocui.Gui) error {
 	}
 
 	// Current Ping Statistics view.
-	_, err = g.SetView(STATS, 0, maxY-10, IPSWIDTH, maxY-4)
+	_, err = g.SetView(STATS, 0, maxY-10, IPSWIDTH, maxY-2)
 	if err != nil && err != gocui.ErrUnknownView {
 		log.Println("Failed to create stats view:", err)
 		return err
 	}
 
 	// Infos view.
-	_, err = g.SetView(INFOS, 0, maxY-3, IPSWIDTH, maxY-1)
+	_, err = g.SetView(INFOS, 0, maxY-2, IPSWIDTH, maxY)
 	if err != nil && err != gocui.ErrUnknownView {
 		log.Println("Failed to create infos view:", err)
 		return err
@@ -1172,6 +1251,7 @@ func addPing(g *gocui.Gui, ipv *gocui.View) error {
 	ip := strings.Fields(strings.TrimSpace(l))[1]
 	outputsTitleChan <- fmt.Sprintf(" Ping [%s] Outputs ", ip)
 	ipToPingChan <- ip
+	focusedIPChan <- ip
 	return nil
 }
 
@@ -1205,11 +1285,13 @@ func scheduler() {
 		case ip := <-ipToPingChan:
 			cancel()
 			clearOutputsViewChan <- struct{}{}
+			clearStatsViewChan <- struct{}{}
 			ctx, cancel = context.WithCancel(context.Background())
 			go executePing(ip, ctx)
 		case ip := <-ipToTraceChan:
 			cancel()
 			clearOutputsViewChan <- struct{}{}
+			clearStatsViewChan <- struct{}{}
 			ctx, cancel = context.WithCancel(context.Background())
 			go executeTraceroute(ip, ctx)
 		case <-stopProcessingChan:
@@ -1230,8 +1312,8 @@ func getCurrentTime() string {
 }
 
 // buildPingCommand constructs full command to run. The ping should
-// run indefinitely by default unless a count is defined.
-func buildPingCommand(ip string, ctx context.Context) *exec.Cmd {
+// run indefinitely by default unless a requests is defined.
+func buildPingCommand(ip string, ctx context.Context) (string, *exec.Cmd) {
 	cfg := dbs.getConfig(ip)
 	cfg.start = getCurrentTime()
 	var cmd *exec.Cmd
@@ -1239,8 +1321,8 @@ func buildPingCommand(ip string, ctx context.Context) *exec.Cmd {
 	if runtime.GOOS == "windows" {
 		syntax := fmt.Sprintf("ping %s", ip)
 
-		if cfg.count > 0 {
-			syntax = syntax + fmt.Sprintf(" -n %d", cfg.count)
+		if cfg.requests > 0 {
+			syntax = syntax + fmt.Sprintf(" -n %d", cfg.requests)
 		} else {
 			syntax = syntax + " -t"
 		}
@@ -1253,8 +1335,8 @@ func buildPingCommand(ip string, ctx context.Context) *exec.Cmd {
 	} else {
 		syntax := fmt.Sprintf("ping %s", ip)
 
-		if cfg.count > 0 {
-			syntax = syntax + fmt.Sprintf(" -c %d", cfg.count)
+		if cfg.requests > 0 {
+			syntax = syntax + fmt.Sprintf(" -c %d", cfg.requests)
 		}
 
 		if cfg.timeout > 0 {
@@ -1264,13 +1346,13 @@ func buildPingCommand(ip string, ctx context.Context) *exec.Cmd {
 		cmd = exec.CommandContext(ctx, LinuxShell, "-c", syntax)
 	}
 
-	return cmd
+	return strconv.Itoa(cfg.threshold), cmd
 }
 
 // executePing runs the full ping command.
 func executePing(ip string, ctx context.Context) {
 
-	cmd := buildPingCommand(ip, ctx)
+	threshold, cmd := buildPingCommand(ip, ctx)
 	// combined outputs.
 	cmd.Stderr = cmd.Stdout
 	outpipe, err := cmd.StdoutPipe()
@@ -1292,7 +1374,7 @@ func executePing(ip string, ctx context.Context) {
 
 	// read each line from the pipe content including
 	// the newline char and stream it to data channel.
-	go func() {
+	go func(ip, threshold string) {
 		var data string
 		var err error
 		reader := bufio.NewReader(outpipe)
@@ -1301,9 +1383,13 @@ func executePing(ip string, ctx context.Context) {
 			if err != nil {
 				return
 			}
+			if strings.TrimSpace(data) == "" {
+				continue
+			}
+			outputsStatsChan <- ip + "@" + threshold + "@" + strings.TrimSpace(data)
 			outputsDataChan <- strings.TrimSpace(data)
 		}
-	}()
+	}(ip, threshold)
 
 	select {
 	case <-ctx.Done():
