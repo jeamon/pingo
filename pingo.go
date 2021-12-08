@@ -79,6 +79,7 @@ type config struct {
 	requests  int
 	threshold int
 	timeout   int
+	size      int
 	backup    bool
 }
 
@@ -268,8 +269,8 @@ func isValidIP(ip string) bool {
 // formatIPConfig formats a given IP configuration.
 func (db *databases) formatIPConfig(ip string) string {
 	cfg := db.getConfig(ip)
-	return fmt.Sprintf("backup   : %v\ntimeout  : %d\nstarted  : %s\nrequests : %d\nthreshold: %d",
-		cfg.backup, cfg.timeout, cfg.start, cfg.requests, cfg.threshold)
+	return fmt.Sprintf("backup   : %v\ntimeout  : %d\nstarted  : %s\nrequests : %d\npkts size: %d\nthreshold: %d",
+		cfg.backup, cfg.timeout, cfg.start, cfg.requests, cfg.size, cfg.threshold)
 }
 
 // formatIPStats formats a given IP statistics.
@@ -1331,6 +1332,10 @@ func buildPingCommand(ip string, ctx context.Context) (string, *exec.Cmd) {
 			syntax = syntax + fmt.Sprintf(" -w %d", cfg.timeout)
 		}
 
+		if cfg.size > 0 {
+			syntax = syntax + fmt.Sprintf(" -l %d", cfg.size)
+		}
+
 		cmd = exec.CommandContext(ctx, "cmd", "/C", syntax)
 	} else {
 		syntax := fmt.Sprintf("ping %s", ip)
@@ -1341,6 +1346,10 @@ func buildPingCommand(ip string, ctx context.Context) (string, *exec.Cmd) {
 
 		if cfg.timeout > 0 {
 			syntax = syntax + fmt.Sprintf(" -W %d", cfg.timeout)
+		}
+
+		if cfg.size > 0 {
+			syntax = syntax + fmt.Sprintf(" -s %d", cfg.size)
 		}
 
 		cmd = exec.CommandContext(ctx, LinuxShell, "-c", syntax)
