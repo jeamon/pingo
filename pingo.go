@@ -408,7 +408,7 @@ func main() {
 	maxX, maxY := g.Size()
 
 	// IPs list view.
-	ipsView, err := g.SetView(IPLIST, 0, 0, IPSWIDTH, maxY-18)
+	ipsView, err := g.SetView(IPLIST, 0, 0, IPSWIDTH, maxY-19)
 	if err != nil && err != gocui.ErrUnknownView {
 		log.Println("Failed to create ips list view:", err)
 		return
@@ -434,7 +434,7 @@ func main() {
 	outputsView.Highlight = true
 
 	// Current Ping Configs view.
-	configView, err := g.SetView(CONFIG, 0, maxY-17, IPSWIDTH, maxY-11)
+	configView, err := g.SetView(CONFIG, 0, maxY-18, IPSWIDTH, maxY-11)
 	if err != nil && err != gocui.ErrUnknownView {
 		log.Println("Failed to create config view:", err)
 		return
@@ -663,7 +663,7 @@ func layout(g *gocui.Gui) error {
 	maxX, maxY := g.Size()
 
 	// IPs list view.
-	_, err := g.SetView(IPLIST, 0, 0, IPSWIDTH, maxY-18)
+	_, err := g.SetView(IPLIST, 0, 0, IPSWIDTH, maxY-19)
 	if err != nil && err != gocui.ErrUnknownView {
 		log.Println("Failed to create ips list view:", err)
 		return err
@@ -677,7 +677,7 @@ func layout(g *gocui.Gui) error {
 	}
 
 	// Current Ping Configs view.
-	_, err = g.SetView(CONFIG, 0, maxY-17, IPSWIDTH, maxY-11)
+	_, err = g.SetView(CONFIG, 0, maxY-18, IPSWIDTH, maxY-11)
 	if err != nil && err != gocui.ErrUnknownView {
 		log.Println("Failed to create config view:", err)
 		return err
