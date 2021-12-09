@@ -151,14 +151,9 @@ func newDatabases() *databases {
 // isExists checks if given ip exists.
 func (db *databases) isExistsIP(ip string) bool {
 
-	if !isValidIP(ip) {
-		return false
-	}
-
 	// check if ip is present.
 	db.ipslock.RLock()
 	if _, ok := db.ips[ip]; ok {
-		// ip already exists.
 		db.ipslock.RUnlock()
 		return true
 	}
@@ -167,10 +162,23 @@ func (db *databases) isExistsIP(ip string) bool {
 	return false
 }
 
-// addIP inserts a new ip with its initial configs & stats.
+// addOneMoreIPs take a string of comma-separated IPs and
+// initialize their configs & stats then add them.
+func (db *databases) addOneMoreIPs(ips string) {
+	ipList := strings.Split(ips, ",")
+	if len(ipList) == 0 {
+		return
+	}
+
+	for _, ip := range ipList {
+		db.addNewIP(ip)
+	}
+}
+
+// addNewIP inserts a new ip with its initial configs & stats.
 func (db *databases) addNewIP(ip string) {
 	ip = strings.TrimSpace(ip)
-	if db.isExistsIP(ip) {
+	if !isValidIP(ip) || db.isExistsIP(ip) {
 		return
 	}
 
@@ -234,13 +242,26 @@ func (db *databases) getAllIPs() []string {
 	return ips
 }
 
+// deleteOneMoreIPs take a string of comma-separated IPs
+// and remove them completely from the database.
+func (db *databases) deleteOneMoreIPs(ips string) {
+	ipList := strings.Split(ips, ",")
+	if len(ipList) == 0 {
+		return
+	}
+
+	for _, ip := range ipList {
+		db.deleteIP(ip)
+	}
+}
+
 // deleteIP remove completely an ip from datastore.
 func (db *databases) deleteIP(ip string) {
 	ip = strings.TrimSpace(ip)
-	if !db.isExistsIP(ip) {
+	if !isValidIP(ip) || !db.isExistsIP(ip) {
 		return
 	}
-	log.Println("exists to delete")
+
 	// remove from ips.
 	db.ipslock.Lock()
 	delete(db.ips, ip)
@@ -849,7 +870,8 @@ func clearOutputsView(g *gocui.Gui, v *gocui.View) error {
 	return nil
 }
 
-// addIPInputView displays a temporary input box to add an IP.
+// addIPInputView displays a temporary input box to enter
+// a comma-separated list of IP addresses.
 func addIPInputView(g *gocui.Gui, cv *gocui.View) error {
 	maxX, maxY := g.Size()
 
@@ -862,7 +884,7 @@ func addIPInputView(g *gocui.Gui, cv *gocui.View) error {
 			return err
 		}
 
-		inputView.Title = " Add IP Address"
+		inputView.Title = " Add IP Addresses "
 		inputView.FgColor = gocui.ColorYellow
 		inputView.SelBgColor = gocui.ColorBlack
 		inputView.SelFgColor = gocui.ColorYellow
@@ -907,7 +929,7 @@ func deleteIPInputView(g *gocui.Gui, cv *gocui.View) error {
 			return err
 		}
 
-		inputView.Title = " Delete IP Address"
+		inputView.Title = " Delete IP Addresses "
 		inputView.FgColor = gocui.ColorYellow
 		inputView.SelBgColor = gocui.ColorBlack
 		inputView.SelFgColor = gocui.ColorYellow
@@ -985,7 +1007,7 @@ func searchIPInputView(g *gocui.Gui, cv *gocui.View) error {
 }
 
 // processInput takes the buffer content and process it based on input
-// view name. It adds a new IP to list or delete an existing one.
+// view name. It adds/deletes one or more of IP to/from the database.
 func processInput(g *gocui.Gui, iv *gocui.View) error {
 
 	// read buffer from the beginning.
@@ -999,7 +1021,7 @@ func processInput(g *gocui.Gui, iv *gocui.View) error {
 	case "addIP":
 
 		if strings.TrimSpace(iv.Buffer()) != "" {
-			dbs.addNewIP(iv.Buffer())
+			dbs.addOneMoreIPs(iv.Buffer())
 		} else {
 			// no data entered, so go back.
 			addIPInputView(g, ov)
@@ -1009,7 +1031,7 @@ func processInput(g *gocui.Gui, iv *gocui.View) error {
 	case "deleteIP":
 
 		if strings.TrimSpace(iv.Buffer()) != "" {
-			dbs.deleteIP(iv.Buffer())
+			dbs.deleteOneMoreIPs(iv.Buffer())
 		} else {
 			deleteIPInputView(g, ov)
 			return nil
