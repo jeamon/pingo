@@ -101,8 +101,9 @@ var (
 	focusedIPChan = make(chan string, 10)
 
 	// IP to ping and to trace.
-	ipToPingChan  = make(chan string, 1)
-	ipToTraceChan = make(chan string, 1)
+	ipToPingChan    = make(chan string, 1)
+	ipToTraceChan   = make(chan string, 1)
+	currentOnPingIP string
 
 	// ping and traceroute output entries.
 	outputsDataChan = make(chan string, 10)
@@ -251,6 +252,9 @@ func (db *databases) deleteOneMoreIPs(ips string) {
 	}
 
 	for _, ip := range ipList {
+		if ip == currentOnPingIP {
+			continue
+		}
 		db.deleteIP(ip)
 	}
 }
@@ -799,6 +803,7 @@ func keybindings(g *gocui.Gui) error {
 // stopCurrentProcessing triggered on CTRL+Q send stop flag to channel.
 func stopCurrentProcessing(g *gocui.Gui, v *gocui.View) error {
 	stopProcessingChan <- struct{}{}
+	currentOnPingIP = ""
 	return nil
 }
 
@@ -1274,6 +1279,7 @@ func addPing(g *gocui.Gui, ipv *gocui.View) error {
 	ip := strings.Fields(strings.TrimSpace(l))[1]
 	outputsTitleChan <- fmt.Sprintf(" Ping [%s] Outputs ", ip)
 	ipToPingChan <- ip
+	currentOnPingIP = ip
 	focusedIPChan <- ip
 	return nil
 }
@@ -1294,6 +1300,8 @@ func addTraceroute(g *gocui.Gui, ipv *gocui.View) error {
 	ip := strings.Fields(strings.TrimSpace(l))[1]
 	outputsTitleChan <- fmt.Sprintf(" Traceroute [%s] Outputs ", ip)
 	ipToTraceChan <- ip
+	// reset since no ping.
+	currentOnPingIP = ""
 	return nil
 }
 
