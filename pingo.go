@@ -305,40 +305,53 @@ func (db *databases) formatIPStats(ip string) string {
 		s.min, s.avg, s.max, s.fails, s.match, s.above, s.under)
 }
 
-// loadInfos loads data piped and from all files passed as
-// program arguments and fill the databases of IP infos
-// with only valid IP addresses.
-func (db *databases) loadInfos() {
-
-	var entries []string
+// loadInitialInfos is called at startup and loads any data piped
+// and from all files passed as arguments then fill the databases
+// of IP infos with only valid IP addresses.
+func (db *databases) loadInitialInfos() {
 
 	// retrieve standard input info.
 	fi, _ := os.Stdin.Stat()
-
 	if (fi.Mode() & os.ModeCharDevice) == 0 {
+		var entries []string
 		// there is data is from pipe, so grab the
 		// full content and build a list of entries.
 		content, _ := ioutil.ReadAll(os.Stdin)
 		entries = strings.Split(string(content), "\n")
-
+		// keep only valid IP addresses.
+		for _, e := range entries {
+			if isValidIP(strings.TrimSpace(e)) {
+				db.addNewIP(strings.TrimSpace(e))
+			}
+		}
 	}
 
 	// parse any files content.
-	filenames := os.Args[1:]
-	if len(filenames) > 0 {
-		// for each valid file path, grab its full
-		// content and build a list of entries.
-		var lines []string
-		for _, file := range filenames {
-			content, err := ioutil.ReadFile(file)
-			if err != nil {
-				continue
-			}
-			// construct the list based on "\n" as sep.
-			// then add lines content to entries list.
-			lines = strings.Split(string(content), "\n")
-			entries = append(entries, lines...)
+	db.loadInfosFromFiles(os.Args[1:])
+}
+
+// loadInfosFromFiles loads data from all files passed as
+// input on <CTRL+L> press and fill the databases of IP infos
+// with only valid IP addresses.
+func (db *databases) loadInfosFromFiles(filenames []string) {
+
+	if len(filenames) == 0 {
+		return
+	}
+
+	// for each valid file path, grab its full
+	// content and build a list of entries.
+	var lines []string
+	var entries []string
+	for _, file := range filenames {
+		content, err := ioutil.ReadFile(file)
+		if err != nil {
+			continue
 		}
+		// construct the list based on "\n" as sep.
+		// then add lines content to entries list.
+		lines = strings.Split(string(content), "\n")
+		entries = append(entries, lines...)
 	}
 
 	if len(entries) == 0 {
@@ -381,7 +394,7 @@ func main() {
 
 	// init databases and loads any passed infos.
 	dbs = newDatabases()
-	dbs.loadInfos()
+	dbs.loadInitialInfos()
 
 	g, err := gocui.NewGui(gocui.OutputNormal)
 	if err != nil {
@@ -721,18 +734,23 @@ func keybindings(g *gocui.Gui) error {
 		return err
 	}
 
-	// Ctrl+A to create & add new ip address.
+	// Ctrl+A to create & add one or more new ip addresses (comma-separated input).
 	if err := g.SetKeybinding("", gocui.KeyCtrlA, gocui.ModNone, addIPInputView); err != nil {
 		return err
 	}
 
-	// Ctrl+D to delete existing ip address.
+	// Ctrl+D to delete one or more existing ip addresses (comma-separated input).
 	if err := g.SetKeybinding("", gocui.KeyCtrlD, gocui.ModNone, deleteIPInputView); err != nil {
 		return err
 	}
 
 	// Ctrl+F to find and move cursor on existing ip address.
 	if err := g.SetKeybinding("", gocui.KeyCtrlF, gocui.ModNone, searchIPInputView); err != nil {
+		return err
+	}
+
+	// Ctrl+L to load new IP infos from a set of files entered into an input box.
+	if err := g.SetKeybinding("", gocui.KeyCtrlL, gocui.ModNone, loadIPsInputView); err != nil {
 		return err
 	}
 
@@ -901,7 +919,7 @@ func addIPInputView(g *gocui.Gui, cv *gocui.View) error {
 		}
 		g.Cursor = true
 		inputView.Highlight = true
-		// bind Enter key to copyInput function.
+		// bind Enter key to processInput function.
 		if err := g.SetKeybinding(name, gocui.KeyEnter, gocui.ModNone, processInput); err != nil {
 			log.Println(err)
 			return err
@@ -946,7 +964,7 @@ func deleteIPInputView(g *gocui.Gui, cv *gocui.View) error {
 		}
 		g.Cursor = true
 		inputView.Highlight = true
-		// bind Enter key to copyInput function.
+		// bind Enter key to processInput function.
 		if err := g.SetKeybinding(name, gocui.KeyEnter, gocui.ModNone, processInput); err != nil {
 			log.Println(err)
 			return err
@@ -991,8 +1009,54 @@ func searchIPInputView(g *gocui.Gui, cv *gocui.View) error {
 		}
 		g.Cursor = true
 		inputView.Highlight = true
-		// bind Enter key to copyInput function.
+		// bind Enter key to processInput function.
 		if err := g.SetKeybinding(name, gocui.KeyEnter, gocui.ModNone, searchAndFocusIP); err != nil {
+			log.Println(err)
+			return err
+		}
+
+		// bind Ctrl+Q and Escape keys to close the input box.
+		if err := g.SetKeybinding(name, gocui.KeyCtrlQ, gocui.ModNone, closeInputView); err != nil {
+			log.Println(err)
+			return err
+		}
+
+		if err := g.SetKeybinding(name, gocui.KeyEsc, gocui.ModNone, closeInputView); err != nil {
+			log.Println(err)
+			return err
+		}
+	}
+	return nil
+}
+
+// loadIPsInputView displays a temporary input box to enter
+// a comma-separated list of files to load IP addresses from.
+func loadIPsInputView(g *gocui.Gui, cv *gocui.View) error {
+	maxX, maxY := g.Size()
+
+	const name = "addFiles"
+
+	// construct the input box and position at the center of the screen.
+	if inputView, err := g.SetView(name, maxX/2-25, maxY/2, maxX/2+25, maxY/2+2); err != nil {
+		if err != gocui.ErrUnknownView {
+			log.Println("Failed to display input view: ", err)
+			return err
+		}
+
+		inputView.Title = " Enter Filenames (Separated By Comma) "
+		inputView.FgColor = gocui.ColorYellow
+		inputView.SelBgColor = gocui.ColorBlack
+		inputView.SelFgColor = gocui.ColorYellow
+		inputView.Editable = true
+
+		if _, err := g.SetCurrentView(name); err != nil {
+			log.Println(err)
+			return err
+		}
+		g.Cursor = true
+		inputView.Highlight = true
+		// bind Enter key to processInput function.
+		if err := g.SetKeybinding(name, gocui.KeyEnter, gocui.ModNone, processInput); err != nil {
 			log.Println(err)
 			return err
 		}
@@ -1039,6 +1103,20 @@ func processInput(g *gocui.Gui, iv *gocui.View) error {
 			dbs.deleteOneMoreIPs(iv.Buffer())
 		} else {
 			deleteIPInputView(g, ov)
+			return nil
+		}
+
+	case "addFiles":
+
+		if strings.TrimSpace(iv.Buffer()) != "" {
+			filenames := strings.Split(strings.TrimSpace(iv.Buffer()), ",")
+			// remove any space around each filename.
+			for i := 0; i < len(filenames); i++ {
+				filenames[i] = strings.TrimSpace(filenames[i])
+			}
+			dbs.loadInfosFromFiles(filenames)
+		} else {
+			loadIPsInputView(g, ov)
 			return nil
 		}
 	}
