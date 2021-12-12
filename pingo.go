@@ -314,7 +314,7 @@ func (db *databases) loadInitialInfos() {
 	fi, _ := os.Stdin.Stat()
 	if (fi.Mode() & os.ModeCharDevice) == 0 {
 		var entries []string
-		// there is data is from pipe, so grab the
+		// there is data from pipe input, so grab the
 		// full content and build a list of entries.
 		content, _ := ioutil.ReadAll(os.Stdin)
 		entries = strings.Split(string(content), "\n")
@@ -568,7 +568,7 @@ func updateOutputsView(g *gocui.Gui, outputsView *gocui.View) {
 		select {
 		case output = <-outputsDataChan:
 			g.Update(func(g *gocui.Gui) error {
-				fmt.Fprintln(outputsView, output)
+				fmt.Fprint(outputsView, "\n"+output)
 				return nil
 			})
 		case <-clearOutputsViewChan:
@@ -721,12 +721,7 @@ func quit(g *gocui.Gui, v *gocui.View) error {
 // keybindings binds multiple keys to views.
 func keybindings(g *gocui.Gui) error {
 
-	// keys binding on global terminal itself.
 	if err := g.SetKeybinding("", gocui.KeyCtrlC, gocui.ModNone, quit); err != nil {
-		return err
-	}
-
-	if err := g.SetKeybinding("", gocui.KeyF1, gocui.ModNone, displayHelpView); err != nil {
 		return err
 	}
 
@@ -734,23 +729,48 @@ func keybindings(g *gocui.Gui) error {
 		return err
 	}
 
+	// use F1 to display help message when the focus is on OUPUTS or IPLIST view.
+	if err := g.SetKeybinding(IPLIST, gocui.KeyF1, gocui.ModNone, displayHelpView); err != nil {
+		return err
+	}
+
+	if err := g.SetKeybinding(OUTPUTS, gocui.KeyF1, gocui.ModNone, displayHelpView); err != nil {
+		return err
+	}
+
 	// Ctrl+A to create & add one or more new ip addresses (comma-separated input).
-	if err := g.SetKeybinding("", gocui.KeyCtrlA, gocui.ModNone, addIPInputView); err != nil {
+	if err := g.SetKeybinding(IPLIST, gocui.KeyCtrlA, gocui.ModNone, addIPInputView); err != nil {
+		return err
+	}
+
+	if err := g.SetKeybinding(OUTPUTS, gocui.KeyCtrlA, gocui.ModNone, addIPInputView); err != nil {
 		return err
 	}
 
 	// Ctrl+D to delete one or more existing ip addresses (comma-separated input).
-	if err := g.SetKeybinding("", gocui.KeyCtrlD, gocui.ModNone, deleteIPInputView); err != nil {
+	if err := g.SetKeybinding(IPLIST, gocui.KeyCtrlD, gocui.ModNone, deleteIPInputView); err != nil {
+		return err
+	}
+
+	if err := g.SetKeybinding(OUTPUTS, gocui.KeyCtrlD, gocui.ModNone, deleteIPInputView); err != nil {
 		return err
 	}
 
 	// Ctrl+F to find and move cursor on existing ip address.
-	if err := g.SetKeybinding("", gocui.KeyCtrlF, gocui.ModNone, searchIPInputView); err != nil {
+	if err := g.SetKeybinding(IPLIST, gocui.KeyCtrlF, gocui.ModNone, searchIPInputView); err != nil {
+		return err
+	}
+
+	if err := g.SetKeybinding(OUTPUTS, gocui.KeyCtrlF, gocui.ModNone, searchIPInputView); err != nil {
 		return err
 	}
 
 	// Ctrl+L to load new IP infos from a set of files entered into an input box.
-	if err := g.SetKeybinding("", gocui.KeyCtrlL, gocui.ModNone, loadIPsInputView); err != nil {
+	if err := g.SetKeybinding(IPLIST, gocui.KeyCtrlL, gocui.ModNone, loadIPsInputView); err != nil {
+		return err
+	}
+
+	if err := g.SetKeybinding(OUTPUTS, gocui.KeyCtrlL, gocui.ModNone, loadIPsInputView); err != nil {
 		return err
 	}
 
