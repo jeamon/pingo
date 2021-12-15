@@ -4,6 +4,9 @@
 package main
 
 import (
+	"context"
+	"fmt"
+	"os/exec"
 	"strconv"
 	"strings"
 )
@@ -41,4 +44,32 @@ func getResponseTime(output string) (int, bool) {
 	}
 
 	return -1, true
+}
+
+// buildPingCommand constructs full command to run. The ping should
+// run indefinitely by default unless a requests is defined.
+func buildPingCommand(ip string, ctx context.Context) (string, *exec.Cmd) {
+	cfg := dbs.getConfig(ip)
+	cfg.start = getCurrentTime()
+	var cmd *exec.Cmd
+
+	syntax := fmt.Sprintf("ping %s", ip)
+
+	if cfg.requests > 0 {
+		syntax = syntax + fmt.Sprintf(" -n %d", cfg.requests)
+	} else {
+		syntax = syntax + " -t"
+	}
+
+	if cfg.timeout > 0 {
+		syntax = syntax + fmt.Sprintf(" -w %d", cfg.timeout)
+	}
+
+	if cfg.size > 0 {
+		syntax = syntax + fmt.Sprintf(" -l %d", cfg.size)
+	}
+
+	cmd = exec.CommandContext(ctx, "cmd", "/C", syntax)
+
+	return strconv.Itoa(cfg.threshold), cmd
 }
