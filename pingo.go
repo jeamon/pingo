@@ -101,8 +101,10 @@ var (
 	focusedIPChan = make(chan string, 10)
 
 	// IP to ping and to trace.
-	ipToPingChan    = make(chan string, 1)
-	ipToTraceChan   = make(chan string, 1)
+	ipToPingChan  = make(chan string, 1)
+	ipToTraceChan = make(chan string, 1)
+	// keep ongoing pinging IP, useful to
+	// avoid its deletion on CTRL+D.
 	currentOnPingIP string
 
 	// ping and traceroute output entries.
@@ -921,13 +923,13 @@ func addIPInputView(g *gocui.Gui, cv *gocui.View) error {
 	const name = "addIP"
 
 	// construct the input box and position at the center of the screen.
-	if inputView, err := g.SetView(name, maxX/2-12, maxY/2, maxX/2+12, maxY/2+2); err != nil {
+	if inputView, err := g.SetView(name, maxX/2-25, maxY/2, maxX/2+25, maxY/2+2); err != nil {
 		if err != gocui.ErrUnknownView {
 			log.Println("Failed to display input view: ", err)
 			return err
 		}
 
-		inputView.Title = " Add IP Addresses "
+		inputView.Title = " Enter IP Addresses (Separated By Comma) "
 		inputView.FgColor = gocui.ColorYellow
 		inputView.SelBgColor = gocui.ColorBlack
 		inputView.SelFgColor = gocui.ColorYellow
@@ -1438,52 +1440,6 @@ func scheduler() {
 func getCurrentTime() string {
 	t := time.Now()
 	return fmt.Sprintf("%02d:%02d:%02d", t.Hour(), t.Minute(), t.Second())
-}
-
-// buildPingCommand constructs full command to run. The ping should
-// run indefinitely by default unless a requests is defined.
-func buildPingCommand(ip string, ctx context.Context) (string, *exec.Cmd) {
-	cfg := dbs.getConfig(ip)
-	cfg.start = getCurrentTime()
-	var cmd *exec.Cmd
-
-	if runtime.GOOS == "windows" {
-		syntax := fmt.Sprintf("ping %s", ip)
-
-		if cfg.requests > 0 {
-			syntax = syntax + fmt.Sprintf(" -n %d", cfg.requests)
-		} else {
-			syntax = syntax + " -t"
-		}
-
-		if cfg.timeout > 0 {
-			syntax = syntax + fmt.Sprintf(" -w %d", cfg.timeout)
-		}
-
-		if cfg.size > 0 {
-			syntax = syntax + fmt.Sprintf(" -l %d", cfg.size)
-		}
-
-		cmd = exec.CommandContext(ctx, "cmd", "/C", syntax)
-	} else {
-		syntax := fmt.Sprintf("ping %s", ip)
-
-		if cfg.requests > 0 {
-			syntax = syntax + fmt.Sprintf(" -c %d", cfg.requests)
-		}
-
-		if cfg.timeout > 0 {
-			syntax = syntax + fmt.Sprintf(" -W %d", cfg.timeout)
-		}
-
-		if cfg.size > 0 {
-			syntax = syntax + fmt.Sprintf(" -s %d", cfg.size)
-		}
-
-		cmd = exec.CommandContext(ctx, LinuxShell, "-c", syntax)
-	}
-
-	return strconv.Itoa(cfg.threshold), cmd
 }
 
 // executePing runs the full ping command.
