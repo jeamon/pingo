@@ -1109,6 +1109,13 @@ func loadIPsInputView(g *gocui.Gui, cv *gocui.View) error {
 	return nil
 }
 
+// formatEditIPConfig formats a given IP configuration for editing.
+func (db *databases) formatEditIPConfig(ip string) string {
+	cfg := db.getConfig(ip)
+	return fmt.Sprintf("backup   : %v\ntimeout  : %d\nrequests : %d\npkts size: %d\nthreshold: %d",
+		cfg.backup, cfg.timeout, cfg.requests, cfg.size, cfg.threshold)
+}
+
 // editIPConfigView displays a temporary input box to enter
 // configuration of the current focused IP address.
 func editIPConfigView(g *gocui.Gui, ipv *gocui.View) error {
@@ -1124,13 +1131,13 @@ func editIPConfigView(g *gocui.Gui, ipv *gocui.View) error {
 	}
 
 	ip := strings.Fields(strings.TrimSpace(l))[1]
-	cfg := dbs.formatIPConfig(ip)
+	cfg := dbs.formatEditIPConfig(ip)
 
 	maxX, maxY := g.Size()
 	const name = "editIPConfig"
 
 	// construct the input box and position at the center of the screen.
-	if inputView, err := g.SetView(name, maxX/2-18, maxY/2, maxX/2+18, maxY/2+7); err != nil {
+	if inputView, err := g.SetView(name, maxX/2-18, maxY/2, maxX/2+18, maxY/2+6); err != nil {
 		if err != gocui.ErrUnknownView {
 			log.Println("Failed to display input view: ", err)
 			return err
@@ -1284,6 +1291,7 @@ func editIPConfig(ip, configs string) {
 	}
 	// update if only cfg changed.
 	if *cfg != (config{}) {
+		cfg.start = "n/a"
 		dbs.updateConfig(ip, cfg)
 	}
 }
