@@ -1137,13 +1137,13 @@ func editIPConfigView(g *gocui.Gui, ipv *gocui.View) error {
 	const name = "editIPConfig"
 
 	// construct the input box and position at the center of the screen.
-	if inputView, err := g.SetView(name, maxX/2-18, maxY/2, maxX/2+18, maxY/2+6); err != nil {
+	if inputView, err := g.SetView(name, maxX/2-23, maxY/2, maxX/2+23, maxY/2+6); err != nil {
 		if err != gocui.ErrUnknownView {
 			log.Println("Failed to display input view: ", err)
 			return err
 		}
 
-		inputView.Title = fmt.Sprintf(" %s | Edit & Press Enter ", ip)
+		inputView.Title = fmt.Sprintf(" [%s] | Edit & Press Enter ", ip)
 		inputView.FgColor = gocui.ColorYellow
 		inputView.SelBgColor = gocui.ColorBlack
 		inputView.SelFgColor = gocui.ColorRed
@@ -1227,6 +1227,8 @@ func processInput(g *gocui.Gui, iv *gocui.View) error {
 		if strings.TrimSpace(iv.Buffer()) != "" {
 			// retreive the IP address concerned.
 			ip := strings.TrimSpace(strings.Split(iv.Title, "|")[0])
+			ip = strings.TrimLeft(ip, "[")
+			ip = strings.TrimRight(ip, "]")
 			editIPConfig(ip, strings.TrimSpace(iv.Buffer()))
 		}
 	}
