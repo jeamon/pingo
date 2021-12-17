@@ -1262,22 +1262,22 @@ func editIPConfig(ip, configs string) {
 		switch strings.TrimSpace(fv[0]) {
 
 		case "requests":
-			if req, err := strconv.Atoi(strings.TrimSpace(fv[1])); err == nil {
+			if req, err := strconv.Atoi(strings.TrimSpace(fv[1])); err == nil && req > 0 {
 				cfg.requests = req
 			}
 
 		case "threshold":
-			if thres, err := strconv.Atoi(strings.TrimSpace(fv[1])); err == nil {
+			if thres, err := strconv.Atoi(strings.TrimSpace(fv[1])); err == nil && thres > 0 {
 				cfg.threshold = thres
 			}
 
 		case "timeout":
-			if t, err := strconv.Atoi(strings.TrimSpace(fv[1])); err == nil {
+			if t, err := strconv.Atoi(strings.TrimSpace(fv[1])); err == nil && t > 0 {
 				cfg.timeout = t
 			}
 
 		case "pkts size":
-			if s, err := strconv.Atoi(strings.TrimSpace(fv[1])); err == nil {
+			if s, err := strconv.Atoi(strings.TrimSpace(fv[1])); err == nil && s > 0 {
 				cfg.size = s
 			}
 
