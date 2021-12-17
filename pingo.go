@@ -204,6 +204,13 @@ func (db *databases) addConfig(ip string) {
 	db.cfglock.Unlock()
 }
 
+// updateConfig replace the existing configs values of an ip by new ones.
+func (db *databases) updateConfig(ip string, cfg *config) {
+	db.cfglock.Lock()
+	db.configs[ip] = cfg
+	db.cfglock.Unlock()
+}
+
 // addStats inserts a new ip with 0 values as initial stats.
 func (db *databases) addStats(ip string) {
 	db.slock.Lock()
@@ -837,6 +844,11 @@ func keybindings(g *gocui.Gui) error {
 		return err
 	}
 
+	// Ctrl+E to edit focused IP configuration details.
+	if err := g.SetKeybinding(IPLIST, gocui.KeyCtrlE, gocui.ModNone, editIPConfigView); err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -1097,6 +1109,67 @@ func loadIPsInputView(g *gocui.Gui, cv *gocui.View) error {
 	return nil
 }
 
+// editIPConfigView displays a temporary input box to enter
+// configuration of the current focused IP address.
+func editIPConfigView(g *gocui.Gui, ipv *gocui.View) error {
+
+	_, cy := ipv.Cursor()
+	l, err := ipv.Line(cy)
+	if err != nil {
+		log.Println("Failed to read current focused ip value:", err)
+		return nil
+	}
+	if len(l) == 0 {
+		return nil
+	}
+
+	ip := strings.Fields(strings.TrimSpace(l))[1]
+	cfg := dbs.formatIPConfig(ip)
+
+	maxX, maxY := g.Size()
+	const name = "editIPConfig"
+
+	// construct the input box and position at the center of the screen.
+	if inputView, err := g.SetView(name, maxX/2-18, maxY/2, maxX/2+18, maxY/2+7); err != nil {
+		if err != gocui.ErrUnknownView {
+			log.Println("Failed to display input view: ", err)
+			return err
+		}
+
+		inputView.Title = fmt.Sprintf(" %s | Edit & Press Enter ", ip)
+		inputView.FgColor = gocui.ColorYellow
+		inputView.SelBgColor = gocui.ColorBlack
+		inputView.SelFgColor = gocui.ColorRed
+		inputView.Editable = true
+
+		if _, err := g.SetCurrentView(name); err != nil {
+			log.Println(err)
+			return err
+		}
+		g.Cursor = true
+		inputView.Highlight = true
+		// bind Enter key to processInput function.
+		if err := g.SetKeybinding(name, gocui.KeyEnter, gocui.ModNone, processInput); err != nil {
+			log.Println(err)
+			return err
+		}
+
+		// bind Ctrl+Q and Escape keys to close the input box.
+		if err := g.SetKeybinding(name, gocui.KeyCtrlQ, gocui.ModNone, closeInputView); err != nil {
+			log.Println(err)
+			return err
+		}
+
+		if err := g.SetKeybinding(name, gocui.KeyEsc, gocui.ModNone, closeInputView); err != nil {
+			log.Println(err)
+			return err
+		}
+
+		fmt.Fprint(inputView, strings.TrimSpace(cfg))
+	}
+	return nil
+}
+
 // processInput takes the buffer content and process it based on input
 // view name. It adds/deletes one or more of IP to/from the database.
 func processInput(g *gocui.Gui, iv *gocui.View) error {
@@ -1141,10 +1214,18 @@ func processInput(g *gocui.Gui, iv *gocui.View) error {
 			loadIPsInputView(g, ov)
 			return nil
 		}
+
+	case "editIPConfig":
+
+		if strings.TrimSpace(iv.Buffer()) != "" {
+			// retreive the IP address concerned.
+			ip := strings.TrimSpace(strings.Split(iv.Title, "|")[0])
+			editIPConfig(ip, strings.TrimSpace(iv.Buffer()))
+		}
 	}
 
 	if err := deleteInputView(g, iv); err != nil {
-		log.Println("Failed to delete ips input view: ", err)
+		log.Println("Failed to delete input box view: ", err)
 		return err
 	}
 
@@ -1157,6 +1238,54 @@ func processInput(g *gocui.Gui, iv *gocui.View) error {
 	g.Update(updateIPsView)
 
 	return nil
+}
+
+// editIPConfig takes input data and update a given IP configs.
+func editIPConfig(ip, configs string) {
+	cfg := &config{}
+	lines := strings.Split(configs, "\n")
+	for _, line := range lines {
+		fv := strings.Split(line, ":")
+		if len(fv) != 2 {
+			continue
+		}
+
+		switch strings.TrimSpace(fv[0]) {
+
+		case "requests":
+			if req, err := strconv.Atoi(strings.TrimSpace(fv[1])); err == nil {
+				cfg.requests = req
+			}
+
+		case "threshold":
+			if thres, err := strconv.Atoi(strings.TrimSpace(fv[1])); err == nil {
+				cfg.threshold = thres
+			}
+
+		case "timeout":
+			if t, err := strconv.Atoi(strings.TrimSpace(fv[1])); err == nil {
+				cfg.timeout = t
+			}
+
+		case "pkts size":
+			if s, err := strconv.Atoi(strings.TrimSpace(fv[1])); err == nil {
+				cfg.size = s
+			}
+
+		case "backup":
+			if strings.ToLower(strings.TrimSpace(fv[1])) == "true" {
+				cfg.backup = true
+			}
+
+			if strings.ToLower(strings.TrimSpace(fv[1])) == "false" {
+				cfg.backup = false
+			}
+		}
+	}
+	// update if only cfg changed.
+	if *cfg != (config{}) {
+		dbs.updateConfig(ip, cfg)
+	}
 }
 
 // searchAndFocusIP locates an IP and move cursor on it.
