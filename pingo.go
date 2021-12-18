@@ -187,7 +187,7 @@ func (db *databases) addNewIP(ip string) {
 
 	db.addIP(ip)
 	db.addConfig(ip)
-	db.addStats(ip)
+	db.initStats(ip)
 }
 
 // addIP inserts a new ip with empty struct as value.
@@ -211,8 +211,8 @@ func (db *databases) updateConfig(ip string, cfg *config) {
 	db.cfglock.Unlock()
 }
 
-// addStats inserts a new ip with 0 values as initial stats.
-func (db *databases) addStats(ip string) {
+// initStats initialize an ip with 0 values as initial stats.
+func (db *databases) initStats(ip string) {
 	db.slock.Lock()
 	db.stats[ip] = &stat{}
 	db.slock.Unlock()
@@ -1592,12 +1592,16 @@ func executePing(ip string, ctx context.Context) {
 		log.Println("Failed to get ping process pipe:", err)
 		return
 	}
+
 	// async start.
 	err = cmd.Start()
 	if err != nil {
 		log.Println("Failed to start ping:", err)
 		return
 	}
+
+	// reset this IP stats.
+	dbs.initStats(ip)
 
 	done := make(chan error)
 	go func() {
