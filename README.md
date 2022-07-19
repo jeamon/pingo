@@ -1,13 +1,19 @@
-# pingo
+# PinGO
 
 As a network champion from designing and implementing to troubleshooting large scale networks - I know that is usually not easy for administrators to quickly check basics reachability
-statistics when troubleshooting or monitoring their IP-based infrastructures. Pingo is a standalone & lightweight & feature-rich tool to assist on Ping-based & Traceroute-based reachability checking tasks.
-You can pipe input or provide a list of IP addresses at the program startup and by just pressing Enter or P or <CTRL+P> key spin up a customized Ping command on a given IP address then observe in real-time the statistics.
-The same is acheived for Traceroute / Tracert feature. Use <CTRL+T> or T to spin up a traceroute toward a given IP address.
+statistics when troubleshooting or monitoring their IP-based infrastructure devices. PinGO is a standalone & lightweight & feature-rich tool to assist on Ping-based & Traceroute-based reachability checking tasks.
+You can pipe input or provide a list of IP addresses at the program startup. And by just pressing Enter or P or <CTRL+P> key you spin up a customized Ping command on a given IP address then observe in real-time the statistics.
+The same is achieved for Traceroute / Tracert feature. Use <CTRL+T> or T to spin up a traceroute toward a given IP address.
 
+
+![overview of PinGO](https://github.com/jeamon/pingo/blob/master/cover.png?raw=true)
 
 
 ## Features / Goals
+
+
+![key controls of PinGO](https://github.com/jeamon/pingo/blob/master/help.PNG?raw=true)
+
 
 * pipe input a list of IP addresses or provide files to load from.
 * auto filter and remove duplicated IP addresses from data provided.
@@ -37,7 +43,7 @@ The same is acheived for Traceroute / Tracert feature. Use <CTRL+T> or T to spin
 
 ## Demo
 
-Preview on my youtube channel. coming soon.
+Live preview on my youtube channel. coming soon.
 
 
 ## Installation
