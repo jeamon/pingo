@@ -293,11 +293,7 @@ func (db *databases) deleteIP(ip string) {
 
 // isValidIP returns true if ip is valid.
 func isValidIP(ip string) bool {
-	if net.ParseIP(ip) != nil {
-		return true
-	}
-
-	return false
+	return net.ParseIP(ip) != nil
 }
 
 // formatIPConfig formats a given IP configuration.
@@ -407,7 +403,8 @@ func main() {
 
 	g, err := gocui.NewGui(gocui.OutputNormal)
 	if err != nil {
-		log.Panicln(err)
+		log.Println("Failed to initialize the gui:", err)
+		return
 	}
 	defer g.Close()
 
@@ -494,7 +491,8 @@ func main() {
 
 	// Apply keybindings to ui.
 	if err = keybindings(g); err != nil {
-		log.Panicln(err)
+		log.Println("Failed to setup keybindings:", err)
+		return
 	}
 
 	// move the focus on the jobs list box.
@@ -542,7 +540,7 @@ func updateIPsView(g *gocui.Gui) error {
 
 	ips := dbs.getAllIPs()
 	for i, ip := range ips {
-		fmt.Fprintln(v, fmt.Sprintf("[%02d] %-15s", i, ip))
+		fmt.Fprintf(v, "[%02d] %-15s\n", i, ip)
 	}
 
 	return nil
@@ -901,7 +899,7 @@ func displayHelpView(g *gocui.Gui, cv *gocui.View) error {
 			return err
 		}
 
-		fmt.Fprintf(helpView, helpDetails)
+		fmt.Fprint(helpView, helpDetails)
 
 	}
 	return nil
@@ -1436,7 +1434,7 @@ func ipsLineBelow(v *gocui.View) bool {
 
 // ipsMoveCursorDown moves cursor to (currentY + 1) position if there is data there.
 func ipsMoveCursorDown(g *gocui.Gui, v *gocui.View) error {
-	if v != nil && ipsLineBelow(v) == true {
+	if v != nil && ipsLineBelow(v) {
 		// there is data to next line.
 		v.MoveCursor(0, 1, false)
 	}
@@ -1456,7 +1454,7 @@ func ipsLineAbove(v *gocui.View) bool {
 
 // ipsMoveCursorUp moves cursor to (currentY - 1) position if there is data there.
 func ipsMoveCursorUp(g *gocui.Gui, v *gocui.View) error {
-	if v != nil && ipsLineAbove(v) == true {
+	if v != nil && ipsLineAbove(v) {
 		// there is data upper.
 		v.MoveCursor(0, -1, false)
 	}
@@ -1475,7 +1473,7 @@ func lineBelow(v *gocui.View) bool {
 
 // outMoveCursorDown moves cursor to (currentY + 1) position if there is data there.
 func outMoveCursorDown(g *gocui.Gui, v *gocui.View) error {
-	if v != nil && lineBelow(v) == true {
+	if v != nil && lineBelow(v) {
 		// there is data to next line.
 		v.MoveCursor(0, 1, false)
 	}
@@ -1494,7 +1492,7 @@ func lineAbove(v *gocui.View) bool {
 
 // outMoveCursorUp moves cursor to (currentY - 1) position if there is data there.
 func outMoveCursorUp(g *gocui.Gui, v *gocui.View) error {
-	if v != nil && lineAbove(v) == true {
+	if v != nil && lineAbove(v) {
 		// there is data upper.
 		v.MoveCursor(0, -1, false)
 	}
@@ -1549,7 +1547,9 @@ func addTraceroute(g *gocui.Gui, ipv *gocui.View) error {
 // or just cancel any ongoing processing.
 func scheduler() {
 	defer wg.Done()
-	ctx, cancel := context.WithCancel(context.Background())
+	var ctx context.Context
+	var cancel context.CancelFunc
+	_, cancel = context.WithCancel(context.Background())
 	for {
 		select {
 		case ip := <-ipToPingChan:
@@ -1633,8 +1633,6 @@ func executePing(ip string, ctx context.Context) {
 	case <-done:
 		break
 	}
-
-	return
 }
 
 // buildTracerouteCommand constructs full command to run.
@@ -1692,6 +1690,4 @@ func executeTraceroute(ip string, ctx context.Context) {
 	case <-done:
 		return
 	}
-
-	return
 }
